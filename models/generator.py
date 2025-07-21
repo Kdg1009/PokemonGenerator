@@ -108,11 +108,11 @@ class Generator(nn.Module):
         self.style_encoder = StyleEncoder(style_dim=self.style_dim)
         self.decoder = Decoder(style_dim=self.style_dim)
 
-    def forward(self, contentData, styleDatas):
+    def forward(self, contentData, styleDatas, return_style_code=False):
         contentCode = self.content_encoder(contentData)
         styleCode = self.style_encoder(styleDatas)
         genImg = self.decoder(contentCode, styleCode)
-        return genImg, styleCode # return styleCode for D
+        return genImg, styleCode if return_style_code else genImg # return styleCode for D
     
     @torch.no_grad()
     def generate(self, contentData, styleDatas):
