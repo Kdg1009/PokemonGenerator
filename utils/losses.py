@@ -9,33 +9,33 @@ class FUNITLosses:
 
     def compute_generator_losses(self, generator, discriminator, content_imgs, style_imgs, class_indices):
         # Shared generator forward pass
-        fake_imgs, _ = generator(content_imgs, style_imgs)
+        fake_imgs, fake_content, fake_style = generator(content_imgs, style_imgs, return_all=True)
 
-        # Reuse discriminator pass for fake_imgs
-        fake_scores, fake_feat = discriminator(fake_imgs, return_feat=True)
-        real_scores, real_feat = discriminator(content_imgs, return_feat=True)
+        # For style loss
+        with torch.no_grad():
+            real_style = generator.style_encoder(style_imgs)
+        style_loss = F.l1_loss(fake_style, real_style)
 
-        # Adversarial Loss
+        # For reconstruction loss
+        with torch.no_grad():
+            real_content = generator.content_encoder(content_imgs)
+        rec_loss = F.l1_loss(fake_content, real_content)
+
+        # For adversarial loss
+        fake_scores = discriminator(fake_imgs)
         fake_logits = fake_scores[range(len(class_indices)), class_indices]
-        adv_loss = -torch.mean(fake_logits)
-
-        # Content Reconstruction Loss
-        rec_loss = F.l1_loss(fake_feat, real_feat.detach())
-
-        # Style Loss (Self-reconstruction)
-        style_recon, _ = generator(style_imgs, style_imgs)
-        style_loss = F.l1_loss(style_recon, style_imgs)
+        adv_loss = F.relu(1.0 + fake_logits).mean()
 
         total_loss = (self.adv_weight * adv_loss +
                       self.rec_weight * rec_loss +
                       self.style_weight * style_loss)
-
+        
         return {
             'total_loss': total_loss,
             'adv_loss': adv_loss,
             'rec_loss': rec_loss,
             'style_loss': style_loss,
-            'fake_imgs': fake_imgs  # For D training
+            'fake_imgs': fake_imgs
         }
 
     def compute_discriminator_loss(self, discriminator, real_imgs, fake_imgs, class_indices):

@@ -30,4 +30,4 @@ class Discriminator(nn.Module):
         feat = self.conv_img(img)  # [B, 512, 1, 1]
         feat = feat.view(feat.size(0), -1)  # [B, 512]
         logits = self.class_head(feat)      # [B, num_classes]
-        return logits, feat if return_feat else logits
+        return logits

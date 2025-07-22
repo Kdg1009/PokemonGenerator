@@ -1,14 +1,16 @@
 import torch
+import torch.nn.functional as F
 from utils.losses import FUNITLosses  # <-- add this import
+import os
 
 def train_phase1(generator, discriminator, dataloader, num_epochs=10, device='cuda',
-                 adv_weight=1.0, rec_weight=10.0, feat_weight=1.0):
+                 adv_weight=1.0, rec_weight=10.0, style_weight=1.0, warmup_epochs=5):
 
     generator = generator.to(device)
     discriminator = discriminator.to(device)
 
     # Setup loss handler
-    losses = FUNITLosses(adv_weight=adv_weight, rec_weight=rec_weight, style_weight=feat_weight)
+    losses = FUNITLosses(adv_weight=adv_weight, rec_weight=rec_weight, style_weight=style_weight)
 
     # Fine-tune decoder, style encoder, and parts of content encoder
     g_params = list(generator.decoder.parameters()) + \
@@ -18,17 +20,26 @@ def train_phase1(generator, discriminator, dataloader, num_epochs=10, device='cu
     optim_G = torch.optim.Adam(g_params, lr=1e-4, betas=(0.5, 0.999))
     optim_D = torch.optim.Adam(discriminator.parameters(), lr=1e-4, betas=(0.5, 0.999))
 
+    # saving checkpoints
+    if not os.path.exists('checkpoints/phase1'):
+        os.makedirs('checkpoints/phase1')
+
     for epoch in range(num_epochs):
-        for content_imgs, style_imgs, class_indices in dataloader:
+        for content_imgs, style_imgs, class_indices, self_style_imgs in dataloader:
             content_imgs = content_imgs.to(device)
             style_imgs = style_imgs.to(device)
             class_indices = class_indices.to(device)
+            self_style_imgs = self_style_imgs.to(device)
 
             # === Generator forward & loss computation ===
             loss_dict = losses.compute_generator_losses(generator, discriminator,
                                                         content_imgs, style_imgs, class_indices)
 
             optim_G.zero_grad()
+            if epoch < warmup_epochs:
+                self_recon_img = generator(content_imgs, self_style_imgs)
+                self_recon_loss = F.l1_loss(self_recon_img, content_imgs)
+                loss_dict['total_loss'] += self_recon_loss
             loss_dict['total_loss'].backward()
             optim_G.step()
 
@@ -42,3 +53,12 @@ def train_phase1(generator, discriminator, dataloader, num_epochs=10, device='cu
 
         print(f"Epoch [{epoch+1}/{num_epochs}] G: {loss_dict['total_loss'].item():.3f}, "
               f"D: {d_loss.item():.3f}")
+        
+        if (epoch + 1) % 10 == 0:
+            torch.save({
+                'epoch': epoch + 1,
+                'generator_state_dict': generator.state_dict(),
+                'discriminator_state_dict': discriminator.state_dict(),
+                'optimizer_G_state_dict': optim_G.state_dict(),
+                'optimizer_D_state_dict': optim_D.state_dict()
+            }, f'checkpoints/phase1/checkpoint_epoch_{epoch + 1}.pth')
