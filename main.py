@@ -34,19 +34,19 @@ def get_latest_checkpoint(checkpoint_dir='checkpoints'):
 def main(phase='phase1', batch_size=8, num_epochs=10, device='cuda'):
     device = torch.device(device if torch.cuda.is_available() else 'cpu')
 
-    # === Initialize models ===
-    generator = Generator()
-    discriminator = Discriminator()
-
     if phase == 'phase1':
         print("Starting Phase 1 training...")
 
         # === Setup dataset and dataloader ===
         dataset = StylizationDatasetPhase1(
-            content_root='D:/kaggle_datasets/animal141/train',
-            style_root_list=['D:/kaggle_datasets/animal141/train', 'D:/kaggle_datasets/best-artworks-of-all-time']
+            content_dir='D:/kaggle_datasets/animal141',
+            style_dir='D:/kaggle_datasets/cropped_artworks_224'
         )
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=6)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=7, pin_memory=True)
+
+        # === Initialize models ===
+        generator = Generator()
+        discriminator = Discriminator(num_classes=len(dataset.style_classes))
 
         # === Train ===
         train_phase1(generator, discriminator, dataloader,
@@ -57,17 +57,19 @@ def main(phase='phase1', batch_size=8, num_epochs=10, device='cuda'):
 
     elif phase == 'phase2':
         print("Starting Phase 2 training...")
+        # === Setup dataset and dataloader ===
+        dataset = StylizationDatasetPhase2(
+            content_dir='D:/kaggle_datasets/animal141',
+            style_dir='D:/kaggle_datasets/PokemonData'
+        )
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4)
 
+        # === Initialize models ===
+        generator = Generator()
+        discriminator = Discriminator(num_classes=len(dataset.style_classes))
         # === Load generator pretrained from phase 1 ===
         latest_checkpoint = get_latest_checkpoint('checkpoints_phase1')
         generator.load_state_dict(torch.load(latest_checkpoint))
-
-        # === Setup dataset and dataloader ===
-        dataset = StylizationDatasetPhase2(
-            content_root='D:/kaggle_datasets/animal141/train',
-            pokemon_root='D:/kaggle_datasets/PokemonData'
-        )
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4)
 
         # === Train ===
         train_phase2(generator, discriminator, dataloader,

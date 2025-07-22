@@ -6,6 +6,7 @@ import os
 from torch.amp import autocast, GradScaler
 
 from tqdm import tqdm
+import time
 
 def train_phase1(generator, discriminator, dataloader, num_epochs=10, device='cuda',
                  adv_weight=1.0, rec_weight=10.0, style_weight=1.0, recon_weight=10.0,
@@ -34,6 +35,7 @@ def train_phase1(generator, discriminator, dataloader, num_epochs=10, device='cu
 
     for epoch in range(num_epochs):
         for content_imgs, style_imgs, class_indices, self_style_imgs in tqdm(dataloader, desc=f"Epoch {epoch+1}/{num_epochs}"):
+
             content_imgs = content_imgs.to(device)
             style_imgs = style_imgs.to(device)
             class_indices = class_indices.to(device)
