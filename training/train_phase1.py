@@ -2,12 +2,20 @@ import torch
 import torch.nn.functional as F
 from utils.losses import FUNITLosses  # <-- add this import
 import os
+# ---- AMP Use ----
+from torch.amp import autocast, GradScaler
+
+from tqdm import tqdm
 
 def train_phase1(generator, discriminator, dataloader, num_epochs=10, device='cuda',
-                 adv_weight=1.0, rec_weight=10.0, style_weight=1.0, warmup_epochs=5):
+                 adv_weight=1.0, rec_weight=10.0, style_weight=1.0, recon_weight=10.0,
+                 warmup_epochs=5):
 
     generator = generator.to(device)
     discriminator = discriminator.to(device)
+
+    use_amp = device != 'cpu'
+    scalar = GradScaler(device, enabled=use_amp)
 
     # Setup loss handler
     losses = FUNITLosses(adv_weight=adv_weight, rec_weight=rec_weight, style_weight=style_weight)
@@ -25,34 +33,34 @@ def train_phase1(generator, discriminator, dataloader, num_epochs=10, device='cu
         os.makedirs('checkpoints/phase1')
 
     for epoch in range(num_epochs):
-        for content_imgs, style_imgs, class_indices, self_style_imgs in dataloader:
+        for content_imgs, style_imgs, class_indices, self_style_imgs in tqdm(dataloader, desc=f"Epoch {epoch+1}/{num_epochs}"):
             content_imgs = content_imgs.to(device)
             style_imgs = style_imgs.to(device)
             class_indices = class_indices.to(device)
             self_style_imgs = self_style_imgs.to(device)
 
             # === Generator forward & loss computation ===
-            loss_dict = losses.compute_generator_losses(generator, discriminator,
+            optim_G.zero_grad()
+            with autocast(device_type='cuda', enabled=use_amp):
+                loss_dict = losses.compute_generator_losses(generator, discriminator,
                                                         content_imgs, style_imgs, class_indices)
 
-            optim_G.zero_grad()
-            if epoch < warmup_epochs:
-                self_recon_img = generator(content_imgs, self_style_imgs)
-                self_recon_loss = F.l1_loss(self_recon_img, content_imgs)
-                loss_dict['total_loss'] += self_recon_loss
-            loss_dict['total_loss'].backward()
-            optim_G.step()
+                if epoch < warmup_epochs:
+                    self_recon_img = generator(content_imgs, self_style_imgs)
+                    self_recon_loss = F.l1_loss(self_recon_img, content_imgs)
+                    loss_dict['total_loss'] += recon_weight * self_recon_loss
+            scalar.scale(loss_dict['total_loss']).backward()
+            scalar.step(optim_G)
+            scalar.update()
 
             # === Discriminator update ===
-            d_loss = losses.compute_discriminator_loss(discriminator, content_imgs,
-                                                       loss_dict['fake_imgs'], class_indices)
-
             optim_D.zero_grad()
-            d_loss.backward()
-            optim_D.step()
-
-        print(f"Epoch [{epoch+1}/{num_epochs}] G: {loss_dict['total_loss'].item():.3f}, "
-              f"D: {d_loss.item():.3f}")
+            with autocast(device_type='cuda', enabled=use_amp):
+                d_loss = losses.compute_discriminator_loss(discriminator, content_imgs,
+                                                           loss_dict['fake_imgs'], class_indices)
+            scalar.scale(d_loss).backward()
+            scalar.step(optim_D)
+            scalar.update()
         
         if (epoch + 1) % 10 == 0:
             torch.save({

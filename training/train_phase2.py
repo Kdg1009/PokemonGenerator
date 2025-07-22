@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 from utils.losses import FUNITLosses  # <-- add this import
 import os
+from tqdm import tqdm
 
 def train_phase2(generator, discriminator, dataloader, num_epochs=10, device='cuda',
                  adv_weight=1.0, rec_weight=10.0, style_weight=5.0, warmup_epochs=5):
@@ -26,7 +27,7 @@ def train_phase2(generator, discriminator, dataloader, num_epochs=10, device='cu
         os.makedirs('checkpoints/phase2')
 
     for epoch in range(num_epochs):
-        for content_imgs, style_imgs, class_indices, self_style_imgs in dataloader:
+        for content_imgs, style_imgs, class_indices, self_style_imgs in tqdm(dataloader, desc=f"Epoch {epoch+1}/{num_epochs}"):
 
             content_imgs = content_imgs.to(device)
             style_imgs = style_imgs.to(device)
